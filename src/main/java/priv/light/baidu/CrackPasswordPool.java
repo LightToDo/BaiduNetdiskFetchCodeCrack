@@ -55,7 +55,7 @@ public class CrackPasswordPool extends Thread implements ThreadFactory, Callable
         this.passwords = Collections.synchronizedSet(passwords);
         this.hasTestPasswords = Collections.synchronizedSet(new HashSet<>());
 
-        int corePoolSize = Runtime.getRuntime().availableProcessors() + 2;
+        int corePoolSize = Runtime.getRuntime().availableProcessors() + 1;
         int maxPoolSize = 2 * corePoolSize;
         int keepAliveTime = 2;
 

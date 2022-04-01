@@ -69,15 +69,25 @@ public class HttpUtil {
         this.post = new HttpPost(String.format(BAI_DU_PAN_URL, urlEncodeParams));
         prepareParameters(params);
 
-        RequestConfig requestConfig = RequestConfig.custom().setCircularRedirectsAllowed(true).setConnectionRequestTimeout(Timeout.ofSeconds(30)).setConnectTimeout(Timeout.ofSeconds(30)).setResponseTimeout(30, TimeUnit.SECONDS).build();
+        RequestConfig requestConfig = RequestConfig.custom().setCircularRedirectsAllowed(true).setConnectionKeepAlive(TimeValue.ofSeconds(0)).setConnectionRequestTimeout(Timeout.ofSeconds(2)).setConnectTimeout(Timeout.ofSeconds(5)).setResponseTimeout(15, TimeUnit.SECONDS).build();
 
         PoolingHttpClientConnectionManager connectionManager = new PoolingHttpClientConnectionManager();
         connectionManager.closeExpired();
+        connectionManager.setValidateAfterInactivity(TimeValue.ofSeconds(10));
+        connectionManager.closeIdle(TimeValue.ofSeconds(15));
+        connectionManager.setMaxTotal(12);
+        connectionManager.setDefaultMaxPerRoute(12);
+
         this.httpClient = HttpClients.custom().disableCookieManagement().disableAutomaticRetries().setDefaultRequestConfig(requestConfig).setConnectionManager(connectionManager).evictExpiredConnections().build();
 
         PoolingHttpClientConnectionManager proxyConnectionManager = new PoolingHttpClientConnectionManager();
         proxyConnectionManager.closeExpired();
-        this.proxyClient = HttpClients.custom().disableCookieManagement().disableAutomaticRetries().setDefaultRequestConfig(RequestConfig.copy(requestConfig).setConnectionKeepAlive(TimeValue.ofMinutes(1)).build()).setConnectionManager(proxyConnectionManager).evictExpiredConnections().build();
+        proxyConnectionManager.setValidateAfterInactivity(TimeValue.ofSeconds(10));
+        proxyConnectionManager.closeIdle(TimeValue.ofSeconds(15));
+        proxyConnectionManager.setMaxTotal(10);
+        proxyConnectionManager.setDefaultMaxPerRoute(10);
+        this.proxyClient = HttpClients.custom().disableCookieManagement().disableAutomaticRetries().setDefaultRequestConfig(requestConfig).setConnectionManager(proxyConnectionManager).evictExpiredConnections().build();
+
         this.hasDispose = new AtomicBoolean();
     }
 
