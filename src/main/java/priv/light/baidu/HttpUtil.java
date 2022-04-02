@@ -39,6 +39,12 @@ public class HttpUtil {
     public static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final String BAI_DU_PAN_URL = "http://pan.baidu.com/share/verify?%s";
     public static final int SUCCESS = 200;
+    private static final int PROXY_MAX = 10;
+    private static final int REQUEST_MAX;
+
+    static{
+        REQUEST_MAX = CrackPasswordPool.MAX_POOL_SIZE * 5;
+    }
 
     private final HttpGet proxyServerUrl;
     private final HttpPost post;
@@ -69,24 +75,17 @@ public class HttpUtil {
         this.post = new HttpPost(String.format(BAI_DU_PAN_URL, urlEncodeParams));
         prepareParameters(params);
 
-        RequestConfig requestConfig = RequestConfig.custom().setCircularRedirectsAllowed(true).setConnectionKeepAlive(TimeValue.ofSeconds(0)).setConnectionRequestTimeout(Timeout.ofSeconds(5)).setConnectTimeout(Timeout.ofSeconds(10)).setResponseTimeout(10, TimeUnit.SECONDS).build();
+        RequestConfig requestConfig = RequestConfig.custom().setCircularRedirectsAllowed(true).setConnectionKeepAlive(TimeValue.ofSeconds(0)).setConnectionRequestTimeout(Timeout.ofSeconds(2)).setConnectTimeout(Timeout.ofSeconds(2)).setResponseTimeout(5, TimeUnit.SECONDS).build();
 
         PoolingHttpClientConnectionManager connectionManager = new PoolingHttpClientConnectionManager();
-        connectionManager.closeExpired();
         connectionManager.setValidateAfterInactivity(TimeValue.ofSeconds(0));
-        connectionManager.closeIdle(TimeValue.ofSeconds(30));
-        connectionManager.setMaxTotal(12);
-        connectionManager.setDefaultMaxPerRoute(12);
+        connectionManager.setMaxTotal(REQUEST_MAX);
+        connectionManager.setDefaultMaxPerRoute(REQUEST_MAX);
 
-        this.httpClient = HttpClients.custom().disableCookieManagement().disableAutomaticRetries().setDefaultRequestConfig(requestConfig).setConnectionManager(connectionManager).evictExpiredConnections().build();
+        this.httpClient = HttpClients.custom().disableCookieManagement().disableAutomaticRetries().setConnectionManager(connectionManager).evictExpiredConnections().build();
 
         PoolingHttpClientConnectionManager proxyConnectionManager = new PoolingHttpClientConnectionManager();
-        proxyConnectionManager.closeExpired();
-        proxyConnectionManager.setValidateAfterInactivity(TimeValue.ofSeconds(0));
-        proxyConnectionManager.closeIdle(TimeValue.ofSeconds(30));
-        proxyConnectionManager.setMaxTotal(10);
-        proxyConnectionManager.setDefaultMaxPerRoute(10);
-        this.proxyClient = HttpClients.custom().disableCookieManagement().disableAutomaticRetries().setDefaultRequestConfig(requestConfig).setConnectionManager(proxyConnectionManager).evictExpiredConnections().build();
+        this.proxyClient = HttpClients.custom().disableCookieManagement().disableAutomaticRetries().setConnectionManager(proxyConnectionManager).evictExpiredConnections().build();
 
         this.hasDispose = new AtomicBoolean();
     }

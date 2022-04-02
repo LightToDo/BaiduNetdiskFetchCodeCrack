@@ -33,32 +33,36 @@ public class ResponseHandler implements HttpClientResponseHandler<ResponseResult
 
     @Override
     public ResponseResult handleResponse(ClassicHttpResponse response) {
-        int code = response.getCode();
-        if (code != NOT_FOUND && code != PROXY_AUTH) {
-            HttpEntity body = response.getEntity();
-            if (!body.getContentType().contains(JSON)) {
-                this.result.setTestPasswordResult(TestPasswordResult.FOUND_ERROR);
-                return this.result;
-            }
-
-            try {
-                String bodyText = EntityUtils.toString(body, StandardCharsets.UTF_8);
-                EntityUtils.consume(body);
-
-                JsonNode responseJson = HttpUtil.OBJECT_MAPPER.readTree(bodyText);
-                int errorNo = responseJson.path("errno").asInt();
-                if (errorNo == 0) {
-                    this.result.setTestPasswordResult(TestPasswordResult.SUCCESS_FOUND);
+        try (final ClassicHttpResponse closeableResponse = response) {
+            int code = closeableResponse.getCode();
+            if (code != NOT_FOUND && code != PROXY_AUTH) {
+                HttpEntity body = closeableResponse.getEntity();
+                if (!body.getContentType().contains(JSON)) {
+                    this.result.setTestPasswordResult(TestPasswordResult.FOUND_ERROR);
                     return this.result;
                 }
 
-                if (errorNo == PASSWORD_ERROR) {
-                    this.result.setTestPasswordResult(TestPasswordResult.PASSWORD_ERROR);
-                    return this.result;
+                try {
+                    String bodyText = EntityUtils.toString(body, StandardCharsets.UTF_8);
+                    EntityUtils.consume(body);
+
+                    JsonNode responseJson = HttpUtil.OBJECT_MAPPER.readTree(bodyText);
+                    int errorNo = responseJson.path("errno").asInt();
+                    if (errorNo == 0) {
+                        this.result.setTestPasswordResult(TestPasswordResult.SUCCESS_FOUND);
+                        return this.result;
+                    }
+
+                    if (errorNo == PASSWORD_ERROR) {
+                        this.result.setTestPasswordResult(TestPasswordResult.PASSWORD_ERROR);
+                        return this.result;
+                    }
+                } catch (ParseException e) {
+                    e.printStackTrace();
                 }
-            } catch (IOException | ParseException e) {
-                e.printStackTrace();
             }
+        } catch (IOException e) {
+            e.printStackTrace();
         }
 
         this.result.setTestPasswordResult(TestPasswordResult.NEED_CHANGE_PROXY);

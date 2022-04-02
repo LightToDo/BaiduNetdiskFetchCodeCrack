@@ -34,14 +34,12 @@ public class BaiDuPanCrack {
         proxyResponseHandler.setIp(ip);
 
         CrackPasswordPool pool = new CrackPasswordPool(httpUtil, passwordFile, hasTestPasswordFile);
-        Runtime.getRuntime().addShutdownHook(pool);
+
+        ShutDownHook shutdownHook = new ShutDownHook(pool);
+        Runtime.getRuntime().addShutdownHook(shutdownHook);
 
         while (true) {
             try {
-                if (pool.isDebugForceShutDown()) {
-                    break;
-                }
-
                 if (!pool.execute()) {
                     break;
                 }

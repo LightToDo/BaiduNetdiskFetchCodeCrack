@@ -1,7 +1,6 @@
 package priv.light.baidu;
 
 import lombok.Data;
-import lombok.EqualsAndHashCode;
 import lombok.NonNull;
 
 import java.io.File;
@@ -19,15 +18,20 @@ import java.util.concurrent.atomic.AtomicReference;
  * @date 2022/3/30 21:37
  */
 
-@EqualsAndHashCode(callSuper = true)
 @Data
-public class CrackPasswordPool extends Thread implements ThreadFactory, Callable<ResponseResult> {
+public class CrackPasswordPool implements ThreadFactory, Runnable {
 
     private static final String NO_PASSWORD_CAN_TEST = "没有密码可验证.";
     private static final AtomicLong COUNTER = new AtomicLong();
     private static final String THREAD_POOL_NAME = "MyPool Thread Pool-Thread-";
+    public static final int CORE_POOL_SIZE;
+    public static final int MAX_POOL_SIZE;
 
-    private boolean debugForceShutDown;
+    static{
+        CORE_POOL_SIZE = Runtime.getRuntime().availableProcessors() + 1;
+        MAX_POOL_SIZE = 2 * CORE_POOL_SIZE;
+    }
+
     private final ThreadPoolExecutor threadPool;
 
     private final PasswordDictionary passwordDictionary;
@@ -55,14 +59,12 @@ public class CrackPasswordPool extends Thread implements ThreadFactory, Callable
         this.passwords = Collections.synchronizedSet(passwords);
         this.hasTestPasswords = Collections.synchronizedSet(new HashSet<>());
 
-        int corePoolSize = Runtime.getRuntime().availableProcessors() + 1;
-        int maxPoolSize = 2 * corePoolSize;
         int keepAliveTime = 2;
 
         BlockingQueue<Runnable> blockingQueue = new LinkedBlockingQueue<>(Integer.MAX_VALUE / 100);
         ThreadPoolExecutor.CallerRunsPolicy callerRunsPolicy = new ThreadPoolExecutor.CallerRunsPolicy();
 
-        this.threadPool = new ThreadPoolExecutor(corePoolSize, maxPoolSize, keepAliveTime, TimeUnit.MINUTES, blockingQueue, callerRunsPolicy);
+        this.threadPool = new ThreadPoolExecutor(CORE_POOL_SIZE, MAX_POOL_SIZE, keepAliveTime, TimeUnit.MINUTES, blockingQueue, callerRunsPolicy);
         this.httpUtil = httpUtil;
         this.truePassword = new AtomicReference<>();
     }
@@ -76,21 +78,30 @@ public class CrackPasswordPool extends Thread implements ThreadFactory, Callable
         return thread;
     }
 
-    public boolean execute() throws InterruptedException {
+    public boolean execute() {
         if (!this.shouldContinue()) {
             return false;
         }
 
-        Future<ResponseResult> future = this.threadPool.submit((Callable<ResponseResult>) this);
+        this.threadPool.execute(this);
+        return this.shouldContinue();
+    }
+
+    private boolean shouldContinue() {
+        return !this.httpUtil.getHasDispose().get() && !(this.threadPool.isShutdown() || this.threadPool.isTerminating() || this.threadPool.isTerminated());
+    }
+
+    @Override
+    public void run() {
+        ResponseResult responseResult = this.call();
         try {
-            ResponseResult responseResult = future.get();
             String password = responseResult.getPassword();
             TestPasswordResult testPasswordResult = responseResult.getTestPasswordResult();
 
             if (TestPasswordResult.SUCCESS_FOUND.equals(testPasswordResult)) {
                 this.truePassword.set(password);
                 this.httpUtil.dispose();
-                return false;
+                return;
             }
 
             boolean needRetry;
@@ -110,29 +121,14 @@ public class CrackPasswordPool extends Thread implements ThreadFactory, Callable
                 System.out.println(password);
                 this.hasTestPasswords.add(password);
             }
-
-            return needRetry || this.shouldContinue();
-        } catch (ExecutionException e) {
-            e.printStackTrace();
-            if (NO_PASSWORD_CAN_TEST.equals(e.getCause().getMessage())) {
+        } catch (NullPointerException e) {
+            if (NO_PASSWORD_CAN_TEST.equals(e.getMessage())) {
                 this.midwayShutdown();
-                return false;
             }
         }
-
-        return true;
     }
 
-    private boolean shouldContinue() {
-        return !this.httpUtil.getHasDispose().get() && !(this.threadPool.isShutdown() || this.threadPool.isTerminating() || this.threadPool.isTerminated());
-    }
-
-    @Override
-    public void run() {
-        this.shutdown();
-    }
-
-    private void shutdown() {
+    public void shutdown() {
         if (this.httpUtil.getHasDispose().get()) {
             this.successFoundShutdown();
         } else {
@@ -152,10 +148,10 @@ public class CrackPasswordPool extends Thread implements ThreadFactory, Callable
     }
 
     private void midwayShutdown() {
-        this.threadPool.shutdown();
+        this.threadPool.shutdownNow();
         while (true) {
             try {
-                if (this.threadPool.awaitTermination(5, TimeUnit.MINUTES)) {
+                if (this.threadPool.awaitTermination(1, TimeUnit.SECONDS)) {
                     this.disposePasswordDictionary(this.hasTestPasswords);
                     return;
                 }
@@ -177,8 +173,7 @@ public class CrackPasswordPool extends Thread implements ThreadFactory, Callable
         this.passwordHasTestDictionary.dispose();
     }
 
-    @Override
-    public ResponseResult call() {
+    private ResponseResult call() {
         String password;
         synchronized (this.passwords) {
             Optional<String> any = this.passwords.parallelStream().findAny();
