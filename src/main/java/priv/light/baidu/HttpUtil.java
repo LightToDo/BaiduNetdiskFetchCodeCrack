@@ -75,8 +75,6 @@ public class HttpUtil {
         this.post = new HttpPost(String.format(BAI_DU_PAN_URL, urlEncodeParams));
         prepareParameters(params);
 
-        RequestConfig requestConfig = RequestConfig.custom().setCircularRedirectsAllowed(true).setConnectionKeepAlive(TimeValue.ofSeconds(0)).setConnectionRequestTimeout(Timeout.ofSeconds(2)).setConnectTimeout(Timeout.ofSeconds(2)).setResponseTimeout(5, TimeUnit.SECONDS).build();
-
         PoolingHttpClientConnectionManager connectionManager = new PoolingHttpClientConnectionManager();
         connectionManager.setValidateAfterInactivity(TimeValue.ofSeconds(0));
         connectionManager.setMaxTotal(REQUEST_MAX);
