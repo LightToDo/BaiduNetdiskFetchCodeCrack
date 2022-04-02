@@ -27,7 +27,7 @@ public class CrackPasswordPool implements ThreadFactory, Runnable {
     public static final int CORE_POOL_SIZE;
     public static final int MAX_POOL_SIZE;
 
-    static{
+    static {
         CORE_POOL_SIZE = Runtime.getRuntime().availableProcessors() + 1;
         MAX_POOL_SIZE = 2 * CORE_POOL_SIZE;
     }
@@ -38,10 +38,10 @@ public class CrackPasswordPool implements ThreadFactory, Runnable {
     private final PasswordDictionary passwordHasTestDictionary;
     private final Set<String> passwords;
     private final Set<String> hasTestPasswords;
-    private final HttpUtil httpUtil;
+    private HttpUtil httpUtil;
     private final AtomicReference<String> truePassword;
 
-    public CrackPasswordPool(@NonNull HttpUtil httpUtil, @NonNull File passwordFile, @NonNull File hasTestPasswordFile) throws IOException {
+    public CrackPasswordPool(@NonNull File passwordFile, @NonNull File hasTestPasswordFile) throws IOException {
         int count = 4;
         this.passwordDictionary = new PasswordDictionary(count, passwordFile);
         this.passwordHasTestDictionary = new PasswordDictionary(count, hasTestPasswordFile);
@@ -65,7 +65,6 @@ public class CrackPasswordPool implements ThreadFactory, Runnable {
         ThreadPoolExecutor.CallerRunsPolicy callerRunsPolicy = new ThreadPoolExecutor.CallerRunsPolicy();
 
         this.threadPool = new ThreadPoolExecutor(CORE_POOL_SIZE, MAX_POOL_SIZE, keepAliveTime, TimeUnit.MINUTES, blockingQueue, callerRunsPolicy);
-        this.httpUtil = httpUtil;
         this.truePassword = new AtomicReference<>();
     }
 
@@ -87,44 +86,20 @@ public class CrackPasswordPool implements ThreadFactory, Runnable {
         return this.shouldContinue();
     }
 
-    private boolean shouldContinue() {
+    public boolean shouldContinue() {
         return !this.httpUtil.getHasDispose().get() && !(this.threadPool.isShutdown() || this.threadPool.isTerminating() || this.threadPool.isTerminated());
     }
 
     @Override
     public void run() {
-        ResponseResult responseResult = this.call();
         try {
-            String password = responseResult.getPassword();
-            TestPasswordResult testPasswordResult = responseResult.getTestPasswordResult();
-
-            if (TestPasswordResult.SUCCESS_FOUND.equals(testPasswordResult)) {
-                this.truePassword.set(password);
-                this.httpUtil.dispose();
-                return;
-            }
-
-            boolean needRetry;
-            boolean needChangeProxy = TestPasswordResult.NEED_CHANGE_PROXY.equals(testPasswordResult);
-            if (needChangeProxy) {
-                this.httpUtil.configProxy(responseResult.getProxy());
-                needRetry = true;
-            } else {
-                needRetry = TestPasswordResult.FOUND_ERROR.equals(testPasswordResult);
-            }
-
-            if (needRetry) {
-                if (this.shouldContinue()) {
-                    this.passwords.add(password);
-                }
-            } else {
-                System.out.println(password);
-                this.hasTestPasswords.add(password);
-            }
+            this.call();
         } catch (NullPointerException e) {
             if (NO_PASSWORD_CAN_TEST.equals(e.getMessage())) {
                 this.midwayShutdown();
             }
+        } catch (IOException | InterruptedException e) {
+            e.printStackTrace();
         }
     }
 
@@ -173,7 +148,7 @@ public class CrackPasswordPool implements ThreadFactory, Runnable {
         this.passwordHasTestDictionary.dispose();
     }
 
-    private ResponseResult call() {
+    private void call() throws IOException, InterruptedException {
         String password;
         synchronized (this.passwords) {
             Optional<String> any = this.passwords.parallelStream().findAny();
@@ -185,15 +160,7 @@ public class CrackPasswordPool implements ThreadFactory, Runnable {
             this.passwords.remove(password);
         }
 
-        ResponseResult responseResult;
-        try {
-            responseResult = this.httpUtil.executeRequest(password);
-        } catch (InterruptedException | IOException e) {
-            responseResult = new ResponseResult(password, null);
-            responseResult.setTestPasswordResult(TestPasswordResult.FOUND_ERROR);
-        }
-
-        return responseResult;
+        this.httpUtil.executeRequest(password);
     }
 
 }
