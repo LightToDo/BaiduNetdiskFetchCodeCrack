@@ -122,7 +122,7 @@ public class HttpUtil {
         post.setHeader("Accept-Encoding", "gzip, deflate, br");
         post.setHeader("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6");
         post.setHeader("Cookie", "");
-        post.setHeader("Connection", "close");
+        post.setHeader("Connection", "keep-alive");
         post.setHeader("Content-Type", "application/x-www-form-urlencoded");
     }
 
