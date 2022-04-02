@@ -9,6 +9,7 @@ import org.apache.hc.client5.http.config.RequestConfig;
 import org.apache.hc.client5.http.entity.UrlEncodedFormEntity;
 import org.apache.hc.client5.http.impl.ChainElement;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpResponse;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManager;
 import org.apache.hc.core5.http.HttpHost;
@@ -39,7 +40,6 @@ public class HttpUtil {
 
     public static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final String BAI_DU_PAN_URL = "http://pan.baidu.com/share/verify?%s";
-    public static final int SUCCESS = 200;
     private static final int PROXY_MAX = 10;
     private static final int REQUEST_MAX;
 
@@ -77,6 +77,7 @@ public class HttpUtil {
         prepareParameters(params);
 
         PoolingHttpClientConnectionManager connectionManager = new PoolingHttpClientConnectionManager();
+        connectionManager.closeExpired();
         connectionManager.setValidateAfterInactivity(TimeValue.ofSeconds(0));
         connectionManager.setMaxTotal(REQUEST_MAX);
         connectionManager.setDefaultMaxPerRoute(REQUEST_MAX);
@@ -86,6 +87,9 @@ public class HttpUtil {
         this.httpClient = HttpClients.custom().replaceExecInterceptor(ChainElement.RETRY.name(), requestBeforeInterceptor).disableCookieManagement().setConnectionManager(connectionManager).evictExpiredConnections().build();
 
         PoolingHttpClientConnectionManager proxyConnectionManager = new PoolingHttpClientConnectionManager();
+        proxyConnectionManager.closeExpired();
+        proxyConnectionManager.setValidateAfterInactivity(TimeValue.ofSeconds(0));
+
         this.proxyClient = HttpClients.custom().disableAutomaticRetries().setConnectionManager(proxyConnectionManager).evictExpiredConnections().build();
         this.proxyResponseHandler.setProxyClient(this.proxyClient);
 
@@ -127,7 +131,8 @@ public class HttpUtil {
             copyPost.setConfig(this.getHttpProxy());
 
             TimeUnit.MILLISECONDS.sleep(1);
-            this.httpClient.execute(copyPost);
+            CloseableHttpResponse execute = this.httpClient.execute(copyPost);
+            System.out.println();
         } catch (URISyntaxException e) {
             e.printStackTrace();
         }

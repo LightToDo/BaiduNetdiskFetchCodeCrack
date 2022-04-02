@@ -40,7 +40,7 @@ public class ProxyResponseHandler implements HttpClientResponseHandler<HttpHost>
         int port = data.path("Port").asInt();
         if (ip.isEmpty()) {
             CloseableHttpResponse ipResponse = this.proxyClient.execute(this.ip);
-            if (ipResponse.getCode() != HttpUtil.SUCCESS) {
+            if (ipResponse.getCode() != HttpStatus.SC_SUCCESS) {
                 return null;
             }
 

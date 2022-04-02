@@ -72,8 +72,7 @@ public class RetryStrategy extends DefaultHttpRequestRetryStrategy {
                     }
                 }
             }
-        } catch (IOException | ParseException e) {
-            e.printStackTrace();
+        } catch (IOException | ParseException ignored) {
         }
 
         return needRetry && this.crackPasswordPool.shouldContinue();

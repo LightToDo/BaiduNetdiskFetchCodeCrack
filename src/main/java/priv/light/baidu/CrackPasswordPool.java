@@ -99,7 +99,7 @@ public class CrackPasswordPool implements ThreadFactory, Runnable {
                 this.midwayShutdown();
             }
         } catch (IOException | InterruptedException e) {
-            e.printStackTrace();
+            //this.httpUtil.configProxy();
         }
     }
 

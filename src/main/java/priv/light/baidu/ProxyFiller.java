@@ -99,10 +99,7 @@ public class ProxyFiller implements ExecChainHandler {
                 final NoHttpResponseException updatedEx = new NoHttpResponseException(
                         route.getTargetHost().toHostString() + " failed to respond");
                 updatedEx.setStackTrace(ex.getStackTrace());
-                updatedEx.printStackTrace();
-
-                ExecChain.Scope newScope = this.setProxy(scope);
-                return new Object[]{ClassicRequestBuilder.copy(newScope.originalRequest).build(), newScope};
+                throw updatedEx;
             }
             throw ex;
         }

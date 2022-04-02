@@ -38,12 +38,8 @@ public class BaiDuPanCrack {
         Runtime.getRuntime().addShutdownHook(shutdownHook);
 
         while (true) {
-            try {
-                if (!pool.execute()) {
-                    break;
-                }
-            } catch (Exception e) {
-                e.printStackTrace();
+            if (!pool.execute()) {
+                break;
             }
         }
 
