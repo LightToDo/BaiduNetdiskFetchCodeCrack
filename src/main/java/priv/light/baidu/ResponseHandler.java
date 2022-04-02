@@ -21,6 +21,7 @@ import java.nio.charset.StandardCharsets;
 public class ResponseHandler implements HttpClientResponseHandler<ResponseResult> {
 
     private static final int NOT_FOUND = 404;
+    private static final int PROXY_AUTH = 407;
     private static final String JSON = "application/json";
     private static final int PASSWORD_ERROR = -9;
 
@@ -32,7 +33,8 @@ public class ResponseHandler implements HttpClientResponseHandler<ResponseResult
 
     @Override
     public ResponseResult handleResponse(ClassicHttpResponse response) {
-        if (response.getCode() != NOT_FOUND) {
+        int code = response.getCode();
+        if (code != NOT_FOUND && code != PROXY_AUTH) {
             HttpEntity body = response.getEntity();
             if (!body.getContentType().contains(JSON)) {
                 this.result.setTestPasswordResult(TestPasswordResult.FOUND_ERROR);
