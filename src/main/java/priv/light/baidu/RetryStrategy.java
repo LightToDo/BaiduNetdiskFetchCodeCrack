@@ -29,7 +29,7 @@ public class RetryStrategy extends DefaultHttpRequestRetryStrategy {
     private final CrackPasswordPool crackPasswordPool;
 
     public RetryStrategy(@NonNull CrackPasswordPool crackPasswordPool) {
-        this(TimeValue.ofNanoseconds(500), crackPasswordPool);
+        this(TimeValue.ofNanoseconds(5000), crackPasswordPool);
     }
 
     public RetryStrategy(TimeValue defaultRetryInterval, @NonNull CrackPasswordPool crackPasswordPool) {
@@ -45,10 +45,14 @@ public class RetryStrategy extends DefaultHttpRequestRetryStrategy {
 
         HttpUtil httpUtil = this.crackPasswordPool.getHttpUtil();
         boolean needRetry = true;
-        try (final ClassicHttpResponse closeableResponse = (ClassicHttpResponse) response) {
-            int code = closeableResponse.getCode();
+        try {
+            ClassicHttpRequest request = (ClassicHttpRequest) context.getAttribute("http.request");
+            List<NameValuePair> parameters = EntityUtils.parse(request.getEntity());
+            String password = parameters.get(0).getValue();
+
+            int code = response.getCode();
             if (code != HttpStatus.SC_NOT_FOUND && code != HttpStatus.SC_PROXY_AUTHENTICATION_REQUIRED) {
-                HttpEntity body = closeableResponse.getEntity();
+                HttpEntity body = ((ClassicHttpResponse) response).getEntity();
                 if (body.getContentType().contains(JSON)) {
                     String bodyText = EntityUtils.toString(body, StandardCharsets.UTF_8);
                     EntityUtils.consume(body);
@@ -56,9 +60,6 @@ public class RetryStrategy extends DefaultHttpRequestRetryStrategy {
                     JsonNode responseJson = HttpUtil.OBJECT_MAPPER.readTree(bodyText);
                     int errorNo = responseJson.path("errno").asInt();
 
-                    ClassicHttpRequest request = (ClassicHttpRequest) context.getAttribute("http.request");
-                    List<NameValuePair> parameters = EntityUtils.parse(request.getEntity());
-                    String password = parameters.get(0).getValue();
                     if (errorNo == 0) {
                         this.crackPasswordPool.getTruePassword().set(password);
                         httpUtil.dispose();
@@ -72,10 +73,16 @@ public class RetryStrategy extends DefaultHttpRequestRetryStrategy {
                     }
                 }
             }
-        } catch (IOException | ParseException ignored) {
+
+            needRetry = needRetry && this.crackPasswordPool.shouldContinue();
+            if (needRetry) {
+                this.crackPasswordPool.getPasswords().add(password);
+            }
+        } catch (ParseException | IOException e) {
+            e.printStackTrace();
         }
 
-        return needRetry && this.crackPasswordPool.shouldContinue();
+        return needRetry;
     }
 
 }

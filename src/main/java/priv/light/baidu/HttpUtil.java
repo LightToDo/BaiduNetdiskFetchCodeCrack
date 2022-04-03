@@ -9,17 +9,15 @@ import org.apache.hc.client5.http.config.RequestConfig;
 import org.apache.hc.client5.http.entity.UrlEncodedFormEntity;
 import org.apache.hc.client5.http.impl.ChainElement;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
-import org.apache.hc.client5.http.impl.classic.CloseableHttpResponse;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManager;
 import org.apache.hc.core5.http.HttpHost;
 import org.apache.hc.core5.http.NameValuePair;
+import org.apache.hc.core5.http.NoHttpResponseException;
 import org.apache.hc.core5.http.ParseException;
 import org.apache.hc.core5.http.io.entity.EntityUtils;
 import org.apache.hc.core5.http.message.BasicNameValuePair;
 import org.apache.hc.core5.io.CloseMode;
-import org.apache.hc.core5.util.TimeValue;
-import org.apache.hc.core5.util.Timeout;
 
 import java.io.IOException;
 import java.net.URISyntaxException;
@@ -40,7 +38,6 @@ public class HttpUtil {
 
     public static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final String BAI_DU_PAN_URL = "http://pan.baidu.com/share/verify?%s";
-    private static final int PROXY_MAX = 10;
     private static final int REQUEST_MAX;
 
     static {
@@ -77,20 +74,15 @@ public class HttpUtil {
         prepareParameters(params);
 
         PoolingHttpClientConnectionManager connectionManager = new PoolingHttpClientConnectionManager();
-        connectionManager.closeExpired();
-        connectionManager.setValidateAfterInactivity(TimeValue.ofSeconds(0));
         connectionManager.setMaxTotal(REQUEST_MAX);
         connectionManager.setDefaultMaxPerRoute(REQUEST_MAX);
 
         RetryStrategy retryStrategy = new RetryStrategy(crackPasswordPool);
         ProxyFiller requestBeforeInterceptor = new ProxyFiller(this, retryStrategy);
-        this.httpClient = HttpClients.custom().replaceExecInterceptor(ChainElement.RETRY.name(), requestBeforeInterceptor).disableCookieManagement().setConnectionManager(connectionManager).evictExpiredConnections().build();
+        this.httpClient = HttpClients.custom().replaceExecInterceptor(ChainElement.RETRY.name(), requestBeforeInterceptor).setConnectionManagerShared(true).disableCookieManagement().setConnectionManager(connectionManager).evictExpiredConnections().build();
 
         PoolingHttpClientConnectionManager proxyConnectionManager = new PoolingHttpClientConnectionManager();
-        proxyConnectionManager.closeExpired();
-        proxyConnectionManager.setValidateAfterInactivity(TimeValue.ofSeconds(0));
-
-        this.proxyClient = HttpClients.custom().disableAutomaticRetries().setConnectionManager(proxyConnectionManager).evictExpiredConnections().build();
+        this.proxyClient = HttpClients.custom().disableAutomaticRetries().setConnectionManager(proxyConnectionManager).setConnectionManagerShared(true).evictExpiredConnections().build();
         this.proxyResponseHandler.setProxyClient(this.proxyClient);
 
         this.hasDispose = new AtomicBoolean();
@@ -120,20 +112,28 @@ public class HttpUtil {
         this.post.get().setHeader("Content-Type", "application/x-www-form-urlencoded");
     }
 
-    public void executeRequest(String password) throws InterruptedException, IOException {
+    public void executeRequest(String password) {
+        if (this.hasDispose.get()) {
+            return;
+        }
+
         List<NameValuePair> formBody = new ArrayList<>();
         formBody.add(new BasicNameValuePair("pwd", password));
 
+        HttpHost proxy = null;
         try {
             HttpPost copyPost = new HttpPost(this.post.get().getUri());
             copyPost.setHeaders(this.post.get().getHeaders());
             copyPost.setEntity(new UrlEncodedFormEntity(formBody));
             copyPost.setConfig(this.getHttpProxy());
+            RequestConfig requestConfig = copyPost.getConfig();
+            proxy = requestConfig == null ? null : requestConfig.getProxy();
 
-            TimeUnit.MILLISECONDS.sleep(1);
-            CloseableHttpResponse execute = this.httpClient.execute(copyPost);
-            System.out.println();
-        } catch (URISyntaxException e) {
+            this.httpClient.execute(copyPost);
+        } catch (URISyntaxException ignored) {
+        } catch (NoHttpResponseException | RuntimeException e) {
+            this.configProxy(proxy);
+        }catch (IOException e){
             e.printStackTrace();
         }
     }
@@ -156,11 +156,10 @@ public class HttpUtil {
                     continue;
                 }
 
-                RequestConfig requestConfig = RequestConfig.custom().setCircularRedirectsAllowed(true).setExpectContinueEnabled(false).setConnectionRequestTimeout(Timeout.ofSeconds(30)).setConnectTimeout(Timeout.ofSeconds(30)).setResponseTimeout(30, TimeUnit.SECONDS).setProxy(proxy).build();
+                RequestConfig requestConfig = RequestConfig.custom().setCircularRedirectsAllowed(true).setProxy(proxy).build();
                 this.post.get().setConfig(requestConfig);
                 getProxy = true;
             } catch (Exception e) {
-                e.printStackTrace();
                 try {
                     TimeUnit.MILLISECONDS.sleep(1);
                 } catch (InterruptedException ex) {
@@ -184,8 +183,8 @@ public class HttpUtil {
             return;
         }
 
-        this.httpClient.close(CloseMode.GRACEFUL);
-        this.proxyClient.close(CloseMode.GRACEFUL);
+        this.httpClient.close(CloseMode.IMMEDIATE);
+        this.proxyClient.close(CloseMode.IMMEDIATE);
         this.hasDispose.set(true);
     }
 

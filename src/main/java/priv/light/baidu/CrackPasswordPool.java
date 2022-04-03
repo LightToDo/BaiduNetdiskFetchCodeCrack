@@ -21,7 +21,6 @@ import java.util.concurrent.atomic.AtomicReference;
 @Data
 public class CrackPasswordPool implements ThreadFactory, Runnable {
 
-    private static final String NO_PASSWORD_CAN_TEST = "没有密码可验证.";
     private static final AtomicLong COUNTER = new AtomicLong();
     private static final String THREAD_POOL_NAME = "MyPool Thread Pool-Thread-";
     public static final int CORE_POOL_SIZE;
@@ -34,7 +33,6 @@ public class CrackPasswordPool implements ThreadFactory, Runnable {
 
     private final ThreadPoolExecutor threadPool;
 
-    private final PasswordDictionary passwordDictionary;
     private final PasswordDictionary passwordHasTestDictionary;
     private final Set<String> passwords;
     private final Set<String> hasTestPasswords;
@@ -43,14 +41,15 @@ public class CrackPasswordPool implements ThreadFactory, Runnable {
 
     public CrackPasswordPool(@NonNull File passwordFile, @NonNull File hasTestPasswordFile) throws IOException {
         int count = 4;
-        this.passwordDictionary = new PasswordDictionary(count, passwordFile);
+        PasswordDictionary passwordDictionary = new PasswordDictionary(count, passwordFile);
         this.passwordHasTestDictionary = new PasswordDictionary(count, hasTestPasswordFile);
 
         Set<String> passwords;
         if (!passwordFile.exists() || passwordFile.length() == 0) {
-            this.passwordDictionary.writeToFile();
+            passwordDictionary.writeToFile();
         }
-        passwords = this.passwordDictionary.readPassword();
+        passwords = passwordDictionary.readPassword();
+        passwordDictionary.dispose();
 
         if (hasTestPasswordFile.exists() && hasTestPasswordFile.length() > 0) {
             Set<String> hasTestPasswords = this.passwordHasTestDictionary.readPassword();
@@ -87,54 +86,53 @@ public class CrackPasswordPool implements ThreadFactory, Runnable {
     }
 
     public boolean shouldContinue() {
-        return !this.httpUtil.getHasDispose().get() && !(this.threadPool.isShutdown() || this.threadPool.isTerminating() || this.threadPool.isTerminated());
+        return !this.passwords.isEmpty() && !this.httpUtil.getHasDispose().get() && !(this.threadPool.isShutdown() || this.threadPool.isTerminating() || this.threadPool.isTerminated());
+    }
+
+    private void waitForComplete() {
+        while (true) {
+            try {
+                if (this.threadPool.awaitTermination(Long.MAX_VALUE, TimeUnit.DAYS)) {
+                    return;
+                }
+                TimeUnit.MILLISECONDS.sleep(10);
+            } catch (InterruptedException e) {
+                return;
+            }
+        }
     }
 
     @Override
     public void run() {
-        try {
-            this.call();
-        } catch (NullPointerException e) {
-            if (NO_PASSWORD_CAN_TEST.equals(e.getMessage())) {
-                this.midwayShutdown();
+        String password;
+        synchronized (this.passwords) {
+            Optional<String> any = this.passwords.parallelStream().findAny();
+            if (!any.isPresent()) {
+                return;
             }
-        } catch (IOException | InterruptedException e) {
-            //this.httpUtil.configProxy();
+
+            password = any.get();
+            this.passwords.remove(password);
         }
+
+        this.httpUtil.executeRequest(password);
     }
 
     public void shutdown() {
+        this.threadPool.shutdownNow();
+        this.waitForComplete();
+
+        Set<String> passwordsToWrite;
         if (this.httpUtil.getHasDispose().get()) {
-            this.successFoundShutdown();
+            String truePassword = this.truePassword.get();
+
+            passwordsToWrite = new HashSet<>();
+            passwordsToWrite.add("https://pan.baidu.com/s/1" + this.httpUtil.getSUrl() + " 的提取码: " + truePassword);
         } else {
-            this.midwayShutdown();
+            passwordsToWrite = this.hasTestPasswords;
         }
-    }
 
-    private void successFoundShutdown() {
-        this.threadPool.shutdownNow();
-        String truePassword = this.truePassword.get();
-        System.out.println(truePassword);
-
-        Set<String> truePasswords = new HashSet<>();
-        truePasswords.add("https://pan.baidu.com/s/1" + this.httpUtil.getSUrl() + " 的提取码: " + truePassword);
-
-        this.disposePasswordDictionary(truePasswords);
-    }
-
-    private void midwayShutdown() {
-        this.threadPool.shutdownNow();
-        while (true) {
-            try {
-                if (this.threadPool.awaitTermination(1, TimeUnit.SECONDS)) {
-                    this.disposePasswordDictionary(this.hasTestPasswords);
-                    return;
-                }
-            } catch (InterruptedException e) {
-                this.disposePasswordDictionary(this.hasTestPasswords);
-                return;
-            }
-        }
+        this.disposePasswordDictionary(passwordsToWrite);
     }
 
     private void disposePasswordDictionary(Set<String> passwordsToSave) {
@@ -144,23 +142,7 @@ public class CrackPasswordPool implements ThreadFactory, Runnable {
             e.printStackTrace();
         }
 
-        this.passwordDictionary.dispose();
         this.passwordHasTestDictionary.dispose();
-    }
-
-    private void call() throws IOException, InterruptedException {
-        String password;
-        synchronized (this.passwords) {
-            Optional<String> any = this.passwords.parallelStream().findAny();
-            if (!any.isPresent()) {
-                throw new NullPointerException(NO_PASSWORD_CAN_TEST);
-            }
-
-            password = any.get();
-            this.passwords.remove(password);
-        }
-
-        this.httpUtil.executeRequest(password);
     }
 
 }

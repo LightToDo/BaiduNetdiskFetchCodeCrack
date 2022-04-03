@@ -15,8 +15,8 @@ public class BaiDuPanCrack {
     public static void main(String[] args) throws IOException {
         File passwordFile = new File("password.txt");
         File hasTestPasswordFile = new File("passwordHasTest.txt");
-        String sUrl = "T9_CraGw7k8qcZQuOHk7fg";
-        //String sUrl = "lXK8QmWds5EmkabUvKGTjw";
+        //String sUrl = "T9_CraGw7k8qcZQuOHk7fg";
+        String sUrl = "lXK8QmWds5EmkabUvKGTjw";
 
         CrackPasswordPool pool = new CrackPasswordPool(passwordFile, hasTestPasswordFile);
 
