@@ -3,6 +3,7 @@ package priv.light.baidu;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.Data;
 import lombok.NonNull;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.hc.client5.http.classic.methods.HttpGet;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
 import org.apache.hc.client5.http.config.RequestConfig;
@@ -13,7 +14,6 @@ import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManager;
 import org.apache.hc.core5.http.HttpHost;
 import org.apache.hc.core5.http.NameValuePair;
-import org.apache.hc.core5.http.NoHttpResponseException;
 import org.apache.hc.core5.http.ParseException;
 import org.apache.hc.core5.http.io.entity.EntityUtils;
 import org.apache.hc.core5.http.message.BasicNameValuePair;
@@ -33,6 +33,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * @date 2022/3/30 14:24
  */
 
+@Slf4j
 @Data
 public class HttpUtil {
 
@@ -66,8 +67,7 @@ public class HttpUtil {
         String urlEncodeParams = null;
         try {
             urlEncodeParams = EntityUtils.toString(new UrlEncodedFormEntity(params), StandardCharsets.UTF_8);
-        } catch (IOException | ParseException e) {
-            e.printStackTrace();
+        } catch (IOException | ParseException ignored) {
         }
 
         this.post = new AtomicReference<>(new HttpPost(String.format(BAI_DU_PAN_URL, urlEncodeParams)));
@@ -78,11 +78,14 @@ public class HttpUtil {
         connectionManager.setDefaultMaxPerRoute(REQUEST_MAX);
 
         RetryStrategy retryStrategy = new RetryStrategy(crackPasswordPool);
-        ProxyFiller requestBeforeInterceptor = new ProxyFiller(this, retryStrategy);
-        this.httpClient = HttpClients.custom().replaceExecInterceptor(ChainElement.RETRY.name(), requestBeforeInterceptor).setConnectionManagerShared(true).disableCookieManagement().setConnectionManager(connectionManager).evictExpiredConnections().build();
+        RetryStrategyExecutor requestBeforeInterceptor = new RetryStrategyExecutor(this, retryStrategy);
+        this.httpClient = HttpClients.custom().replaceExecInterceptor(ChainElement.RETRY.name(), requestBeforeInterceptor).disableCookieManagement().setConnectionManager(connectionManager).evictExpiredConnections().build();
 
         PoolingHttpClientConnectionManager proxyConnectionManager = new PoolingHttpClientConnectionManager();
-        this.proxyClient = HttpClients.custom().disableAutomaticRetries().setConnectionManager(proxyConnectionManager).setConnectionManagerShared(true).evictExpiredConnections().build();
+        connectionManager.setMaxTotal(REQUEST_MAX);
+        connectionManager.setDefaultMaxPerRoute(REQUEST_MAX);
+
+        this.proxyClient = HttpClients.custom().disableAutomaticRetries().setConnectionManager(proxyConnectionManager).evictExpiredConnections().build();
         this.proxyResponseHandler.setProxyClient(this.proxyClient);
 
         this.hasDispose = new AtomicBoolean();
@@ -120,21 +123,16 @@ public class HttpUtil {
         List<NameValuePair> formBody = new ArrayList<>();
         formBody.add(new BasicNameValuePair("pwd", password));
 
-        HttpHost proxy = null;
         try {
             HttpPost copyPost = new HttpPost(this.post.get().getUri());
             copyPost.setHeaders(this.post.get().getHeaders());
             copyPost.setEntity(new UrlEncodedFormEntity(formBody));
             copyPost.setConfig(this.getHttpProxy());
-            RequestConfig requestConfig = copyPost.getConfig();
-            proxy = requestConfig == null ? null : requestConfig.getProxy();
 
             this.httpClient.execute(copyPost);
         } catch (URISyntaxException ignored) {
-        } catch (NoHttpResponseException | RuntimeException e) {
-            this.configProxy(proxy);
-        }catch (IOException e){
-            e.printStackTrace();
+        } catch (IOException e) {
+            log.error("待处理的IO异常.", e);
         }
     }
 
@@ -162,8 +160,7 @@ public class HttpUtil {
             } catch (Exception e) {
                 try {
                     TimeUnit.MILLISECONDS.sleep(1);
-                } catch (InterruptedException ex) {
-                    ex.printStackTrace();
+                } catch (InterruptedException ignored) {
                 }
             }
         }

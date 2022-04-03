@@ -1,11 +1,10 @@
 package priv.light.baidu;
 
+import lombok.Data;
 import lombok.NonNull;
+import lombok.extern.slf4j.Slf4j;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
+import java.io.*;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
@@ -19,6 +18,8 @@ import java.util.Set;
  * @date 2022/3/30 13:53
  */
 
+@Slf4j
+@Data
 public class PasswordDictionary {
 
     private static final char[] BAI_DU_PASSWORD_INPUT = "qwertyuiopasdfghjklzxcvbnm9876543210".toCharArray();
@@ -101,9 +102,10 @@ public class PasswordDictionary {
             }
         }
 
+        FileLock lock = null;
         try {
             FileChannel channel = fileOutputStream.getChannel();
-            FileLock lock = channel.lock();
+            lock = channel.lock();
             if (lock != null) {
                 for (String password : allArrangeResult) {
                     String format = String.format("%s%s", password, System.lineSeparator());
@@ -111,14 +113,15 @@ public class PasswordDictionary {
                 }
 
                 channel.force(true);
+            }
+        } finally {
+            if (lock != null) {
                 lock.release();
             }
-        } catch (IOException e) {
-            e.printStackTrace();
         }
     }
 
-    public Set<String> readPassword() {
+    public Set<String> readPassword() throws IOException {
         Set<String> result = new HashSet<>();
         try (final FileInputStream fileInputStream = new FileInputStream(this.targetFile)) {
             FileChannel channel = fileInputStream.getChannel();
@@ -131,17 +134,13 @@ public class PasswordDictionary {
                     result.add(password);
                     byteBuffer.clear();
                 }
-
-                lock.release();
             }
-        } catch (IOException e) {
-            e.printStackTrace();
         }
 
         return result;
     }
 
-    public void appendPassword(@NonNull Set<String> newPassword) throws IOException {
+    public synchronized void appendPassword(@NonNull Set<String> newPassword) throws IOException {
         this.write(newPassword, true);
     }
 
@@ -150,7 +149,7 @@ public class PasswordDictionary {
             try {
                 this.outputStream.close();
             } catch (IOException e) {
-                e.printStackTrace();
+                log.error("关闭输出流失败.", e);
             }
         }
 
@@ -158,7 +157,7 @@ public class PasswordDictionary {
             try {
                 this.appendOutputStream.close();
             } catch (IOException e) {
-                e.printStackTrace();
+                log.error("关闭 append 输出流失败.", e);
             }
         }
     }

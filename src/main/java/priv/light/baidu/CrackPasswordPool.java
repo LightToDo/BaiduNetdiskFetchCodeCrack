@@ -2,14 +2,13 @@ package priv.light.baidu;
 
 import lombok.Data;
 import lombok.NonNull;
+import lombok.extern.slf4j.Slf4j;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -18,11 +17,12 @@ import java.util.concurrent.atomic.AtomicReference;
  * @date 2022/3/30 21:37
  */
 
+@Slf4j
 @Data
 public class CrackPasswordPool implements ThreadFactory, Runnable {
 
     private static final AtomicLong COUNTER = new AtomicLong();
-    private static final String THREAD_POOL_NAME = "MyPool Thread Pool-Thread-";
+    private static final String THREAD_POOL_NAME = "Crack Thread Pool-Thread-";
     public static final int CORE_POOL_SIZE;
     public static final int MAX_POOL_SIZE;
 
@@ -31,6 +31,7 @@ public class CrackPasswordPool implements ThreadFactory, Runnable {
         MAX_POOL_SIZE = 2 * CORE_POOL_SIZE;
     }
 
+    private final AtomicBoolean threadShutdown;
     private final ThreadPoolExecutor threadPool;
 
     private final PasswordDictionary passwordHasTestDictionary;
@@ -40,6 +41,8 @@ public class CrackPasswordPool implements ThreadFactory, Runnable {
     private final AtomicReference<String> truePassword;
 
     public CrackPasswordPool(@NonNull File passwordFile, @NonNull File hasTestPasswordFile) throws IOException {
+        this.threadShutdown = new AtomicBoolean();
+
         int count = 4;
         PasswordDictionary passwordDictionary = new PasswordDictionary(count, passwordFile);
         this.passwordHasTestDictionary = new PasswordDictionary(count, hasTestPasswordFile);
@@ -58,12 +61,15 @@ public class CrackPasswordPool implements ThreadFactory, Runnable {
         this.passwords = Collections.synchronizedSet(passwords);
         this.hasTestPasswords = Collections.synchronizedSet(new HashSet<>());
 
-        int keepAliveTime = 2;
+        int keepAliveTime = 1;
 
         BlockingQueue<Runnable> blockingQueue = new LinkedBlockingQueue<>(Integer.MAX_VALUE / 100);
         ThreadPoolExecutor.CallerRunsPolicy callerRunsPolicy = new ThreadPoolExecutor.CallerRunsPolicy();
 
-        this.threadPool = new ThreadPoolExecutor(CORE_POOL_SIZE, MAX_POOL_SIZE, keepAliveTime, TimeUnit.MINUTES, blockingQueue, callerRunsPolicy);
+        this.threadPool = new ThreadPoolExecutor(CORE_POOL_SIZE, MAX_POOL_SIZE, keepAliveTime, TimeUnit.MINUTES, blockingQueue, this, callerRunsPolicy);
+        this.threadPool.allowCoreThreadTimeOut(true);
+        this.threadPool.purge();
+
         this.truePassword = new AtomicReference<>();
     }
 
@@ -89,13 +95,23 @@ public class CrackPasswordPool implements ThreadFactory, Runnable {
         return !this.passwords.isEmpty() && !this.httpUtil.getHasDispose().get() && !(this.threadPool.isShutdown() || this.threadPool.isTerminating() || this.threadPool.isTerminated());
     }
 
-    private void waitForComplete() {
+    public void waitForComplete() {
+        log.info("任务已提交完毕, 等待执行完成, 请勿强制停止程序.");
+        this.waitForComplete(false);
+    }
+
+    private void waitForComplete(boolean force) {
+        if (force) {
+            return;
+        }
+
         while (true) {
             try {
-                if (this.threadPool.awaitTermination(Long.MAX_VALUE, TimeUnit.DAYS)) {
+                boolean noWorker = this.threadPool.getActiveCount() == 0 && this.threadPool.getQueue().isEmpty();
+                if (noWorker || this.threadPool.awaitTermination(1, TimeUnit.SECONDS)) {
                     return;
                 }
-                TimeUnit.MILLISECONDS.sleep(10);
+                TimeUnit.MILLISECONDS.sleep(100);
             } catch (InterruptedException e) {
                 return;
             }
@@ -104,23 +120,35 @@ public class CrackPasswordPool implements ThreadFactory, Runnable {
 
     @Override
     public void run() {
-        String password;
-        synchronized (this.passwords) {
-            Optional<String> any = this.passwords.parallelStream().findAny();
-            if (!any.isPresent()) {
-                return;
+        try {
+            String password;
+            synchronized (this.passwords) {
+                Optional<String> any = this.passwords.parallelStream().findAny();
+                if (!any.isPresent()) {
+                    this.shutdown(false);
+                    return;
+                }
+
+                password = any.get();
+                this.passwords.remove(password);
             }
 
-            password = any.get();
-            this.passwords.remove(password);
+            this.httpUtil.executeRequest(password);
+        } catch (Exception e) {
+            log.error("发生异常, 停止程序.", e);
+            this.shutdown(true);
         }
-
-        this.httpUtil.executeRequest(password);
     }
 
-    public void shutdown() {
+    public void shutdown(boolean force) {
+        if (this.threadShutdown.get()) {
+            return;
+        }
+
+        this.threadShutdown.set(true);
         this.threadPool.shutdownNow();
-        this.waitForComplete();
+        log.info("正在等待线程任务执行结束, 请勿强制停止程序.");
+        this.waitForComplete(force);
 
         Set<String> passwordsToWrite;
         if (this.httpUtil.getHasDispose().get()) {
@@ -133,13 +161,14 @@ public class CrackPasswordPool implements ThreadFactory, Runnable {
         }
 
         this.disposePasswordDictionary(passwordsToWrite);
+        log.info("shutdown工作处理完成, 已测试的密码已经写入文件: {}.", this.passwordHasTestDictionary.getTargetFile().getAbsolutePath());
     }
 
     private void disposePasswordDictionary(Set<String> passwordsToSave) {
         try {
             this.passwordHasTestDictionary.appendPassword(passwordsToSave);
         } catch (IOException e) {
-            e.printStackTrace();
+            log.error(String.format("密码写入文件失败, 文件: %s, 密码: %s.", this.passwordHasTestDictionary.getTargetFile().getAbsolutePath(), Arrays.toString(passwordsToSave.toArray(new String[0]))), e);
         }
 
         this.passwordHasTestDictionary.dispose();

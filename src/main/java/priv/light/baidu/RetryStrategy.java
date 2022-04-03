@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.NonNull;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.hc.client5.http.impl.DefaultHttpRequestRetryStrategy;
 import org.apache.hc.core5.http.*;
 import org.apache.hc.core5.http.io.entity.EntityUtils;
@@ -19,6 +20,7 @@ import java.util.List;
  * @date 2022/4/2 12:32
  */
 
+@Slf4j
 @EqualsAndHashCode(callSuper = true)
 @Data
 public class RetryStrategy extends DefaultHttpRequestRetryStrategy {
@@ -66,7 +68,7 @@ public class RetryStrategy extends DefaultHttpRequestRetryStrategy {
                         needRetry = false;
                     } else {
                         if (errorNo == PASSWORD_ERROR) {
-                            System.out.println(password);
+                            log.info("提取码错误: {}.", password);
                             this.crackPasswordPool.getHasTestPasswords().add(password);
                             needRetry = false;
                         }
@@ -74,12 +76,10 @@ public class RetryStrategy extends DefaultHttpRequestRetryStrategy {
                 }
             }
 
-            needRetry = needRetry && this.crackPasswordPool.shouldContinue();
-            if (needRetry) {
-                this.crackPasswordPool.getPasswords().add(password);
-            }
-        } catch (ParseException | IOException e) {
-            e.printStackTrace();
+        } catch (ParseException e) {
+            log.error("Entity 转换异常.", e);
+        } catch (IOException e) {
+            log.error("JSON 转换异常.", e);
         }
 
         return needRetry;

@@ -27,6 +27,8 @@ public class BaiDuPanCrack {
         StringBuilder addWhiteList = new StringBuilder("http://op.xiequ.cn/IpWhiteList.aspx?uid=56669&ukey=524F8242625394E2851494D7D68D5A84&act=add&ip=");
         HttpGet ip = new HttpGet("http://api.xiequ.cn/VAD/OnlyIp.aspx?yyy=123");
 
+        Runtime.getRuntime().addShutdownHook(new ManualExitShutDownHook(pool));
+
         ProxyResponseHandler proxyResponseHandler = httpUtil.getProxyResponseHandler();
         proxyResponseHandler.setAddWhiteList(addWhiteList);
         proxyResponseHandler.setClearWhiteList(clearWhiteList);
@@ -34,16 +36,13 @@ public class BaiDuPanCrack {
 
         pool.setHttpUtil(httpUtil);
 
-        ShutDownHook shutdownHook = new ShutDownHook(pool);
-        Runtime.getRuntime().addShutdownHook(shutdownHook);
-
         while (true) {
             if (!pool.execute()) {
                 break;
             }
         }
 
-        System.exit(0);
+        pool.waitForComplete();
     }
 
 }
