@@ -16,7 +16,7 @@ public class ManualExitShutDownHook extends Thread{
 
     @Override
     public void run() {
-        crackPasswordPool.shutdown(false);
+        crackPasswordPool.shutdown(true);
     }
 
 }

@@ -66,7 +66,7 @@ public class PasswordDictionary {
         }
     }
 
-    public void writeToFile() throws IOException {
+    public void writeToFile(boolean distinct) throws IOException {
         StringBuilder combineResult = new StringBuilder();
         Set<String> allCombineResult = new HashSet<>();
 
@@ -77,7 +77,7 @@ public class PasswordDictionary {
         boolean[] hasUsed = new boolean[BAI_DU_PASSWORD_INPUT.length];
 
         for (String password : allCombineResult) {
-            if (password.matches("^(\\d|[a-z])\\1{3}$")) {
+            if (distinct && password.matches("^(\\d|[a-z])\\1{3}$")) {
                 continue;
             }
 

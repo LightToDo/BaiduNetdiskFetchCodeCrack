@@ -68,14 +68,13 @@ public class RetryStrategy extends DefaultHttpRequestRetryStrategy {
                         needRetry = false;
                     } else {
                         if (errorNo == PASSWORD_ERROR) {
-                            log.info("提取码错误: {}.", password);
+                            log.info("提取码错误: {}", password);
                             this.crackPasswordPool.getHasTestPasswords().add(password);
                             needRetry = false;
                         }
                     }
                 }
             }
-
         } catch (ParseException e) {
             log.error("Entity 转换异常.", e);
         } catch (IOException e) {

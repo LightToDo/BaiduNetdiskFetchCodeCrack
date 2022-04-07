@@ -12,26 +12,6 @@
             </PatternLayout>
         </Console>
 
-        <RollingRandomAccessFile name="systemAppender" fileName="${baseLogDir}/console.log"
-                                 filePattern="${baseLogDir}/console.log.%d{yyyy-MM-dd}.%i.gz">
-            <PatternLayout>
-                <Pattern>${pattern}</Pattern>
-            </PatternLayout>
-            <Policies>
-                <SizeBasedTriggeringPolicy size="200MB"/>
-                <TimeBasedTriggeringPolicy interval="1" modulate="true"/>
-            </Policies>
-            <Filters>
-                <ThresholdFilter level="INFO" onMatch="ACCEPT" onMismatch="DENY"/>
-            </Filters>
-            <DefaultRolloverStrategy max="6">
-                <Delete basePath="${baseLogDir}" maxDepth="1">
-                    <IfFileName glob="*.gz"/>
-                    <IfLastModified age="1d"/>
-                </Delete>
-            </DefaultRolloverStrategy>
-        </RollingRandomAccessFile>
-
         <RollingRandomAccessFile name="infoAppender" fileName="${baseLogDir}/appInfo.log"
                                  filePattern="${baseLogDir}/appInfo.log.%d{yyyy-MM-dd}.%i.gz">
             <PatternLayout>
@@ -77,7 +57,6 @@
     <Loggers>
         <AsyncRoot level="WARN">
             <AppenderRef ref="console"/>
-            <AppenderRef ref="systemAppender"/>
         </AsyncRoot>
 
         <AsyncLogger name="priv.light" level="INFO" includeLocation="false" additivity="false">

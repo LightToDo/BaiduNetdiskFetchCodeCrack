@@ -20,6 +20,7 @@ import org.apache.hc.core5.http.message.BasicNameValuePair;
 import org.apache.hc.core5.io.CloseMode;
 
 import java.io.IOException;
+import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -39,28 +40,27 @@ public class HttpUtil {
 
     public static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final String BAI_DU_PAN_URL = "http://pan.baidu.com/share/verify?%s";
-    private static final int REQUEST_MAX;
-
-    static {
-        REQUEST_MAX = CrackPasswordPool.MAX_POOL_SIZE * 5;
-    }
 
     private final HttpGet proxyServerUrl;
     private final AtomicReference<HttpPost> post;
-    private final String sUrl;
+    private final URI panUri;
     private final AtomicBoolean hasDispose;
 
     private final CloseableHttpClient httpClient;
     private final CloseableHttpClient proxyClient;
     private final ProxyResponseHandler proxyResponseHandler;
 
-    public HttpUtil(@NonNull String sUrl, @NonNull HttpGet proxyServerUrl, @NonNull CrackPasswordPool crackPasswordPool) {
-        this.sUrl = sUrl;
+    private final CrackPasswordPool crackPasswordPool;
+
+    public HttpUtil(@NonNull URI panUri, @NonNull HttpGet proxyServerUrl, @NonNull CrackPasswordPool crackPasswordPool) {
+        this.panUri = panUri;
         this.proxyServerUrl = proxyServerUrl;
         this.proxyResponseHandler = new ProxyResponseHandler();
 
         List<NameValuePair> params = new ArrayList<>();
-        params.add(new BasicNameValuePair("surl", this.sUrl));
+        String path = panUri.getPath();
+        String sUrl = path.substring(path.lastIndexOf("/1") + 2);
+        params.add(new BasicNameValuePair("surl", sUrl));
         params.add(new BasicNameValuePair("web", "1"));
         params.add(new BasicNameValuePair("clienttype", "0"));
 
@@ -73,18 +73,18 @@ public class HttpUtil {
         this.post = new AtomicReference<>(new HttpPost(String.format(BAI_DU_PAN_URL, urlEncodeParams)));
         prepareParameters(params);
 
-        PoolingHttpClientConnectionManager connectionManager = new PoolingHttpClientConnectionManager();
-        connectionManager.setMaxTotal(REQUEST_MAX);
-        connectionManager.setDefaultMaxPerRoute(REQUEST_MAX);
+        this.crackPasswordPool = crackPasswordPool;
 
-        RetryStrategy retryStrategy = new RetryStrategy(crackPasswordPool);
+        int requestMaxCount = this.crackPasswordPool.getMaxPoolSize() * 5;
+        PoolingHttpClientConnectionManager connectionManager = new PoolingHttpClientConnectionManager();
+        connectionManager.setMaxTotal(requestMaxCount);
+        connectionManager.setDefaultMaxPerRoute(requestMaxCount);
+
+        RetryStrategy retryStrategy = new RetryStrategy(this.crackPasswordPool);
         RetryStrategyExecutor requestBeforeInterceptor = new RetryStrategyExecutor(this, retryStrategy);
         this.httpClient = HttpClients.custom().replaceExecInterceptor(ChainElement.RETRY.name(), requestBeforeInterceptor).disableCookieManagement().setConnectionManager(connectionManager).evictExpiredConnections().build();
 
         PoolingHttpClientConnectionManager proxyConnectionManager = new PoolingHttpClientConnectionManager();
-        connectionManager.setMaxTotal(REQUEST_MAX);
-        connectionManager.setDefaultMaxPerRoute(REQUEST_MAX);
-
         this.proxyClient = HttpClients.custom().disableAutomaticRetries().setConnectionManager(proxyConnectionManager).evictExpiredConnections().build();
         this.proxyResponseHandler.setProxyClient(this.proxyClient);
 

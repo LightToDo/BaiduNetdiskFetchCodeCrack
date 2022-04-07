@@ -3,13 +3,19 @@ package priv.light.baidu;
 import lombok.Data;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.hc.client5.http.classic.methods.HttpGet;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.*;
-import java.util.concurrent.*;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -19,29 +25,23 @@ import java.util.concurrent.atomic.AtomicReference;
 
 @Slf4j
 @Data
-public class CrackPasswordPool implements ThreadFactory, Runnable {
-
-    private static final AtomicLong COUNTER = new AtomicLong();
-    private static final String THREAD_POOL_NAME = "Crack Thread Pool-Thread-";
-    public static final int CORE_POOL_SIZE;
-    public static final int MAX_POOL_SIZE;
-
-    static {
-        CORE_POOL_SIZE = Runtime.getRuntime().availableProcessors() + 1;
-        MAX_POOL_SIZE = 2 * CORE_POOL_SIZE;
-    }
+public class CrackPasswordPool {
 
     private final AtomicBoolean threadShutdown;
     private final ThreadPoolExecutor threadPool;
 
+    private final boolean validateShare;
     private final PasswordDictionary passwordHasTestDictionary;
     private final Set<String> passwords;
     private final Set<String> hasTestPasswords;
     private HttpUtil httpUtil;
+    private PanUriValidator panUriValidator;
     private final AtomicReference<String> truePassword;
+    private final int maxPoolSize;
 
-    public CrackPasswordPool(@NonNull File passwordFile, @NonNull File hasTestPasswordFile) throws IOException {
+    public CrackPasswordPool(boolean validateShare, int corePoolSize, @NonNull File passwordFile, @NonNull File hasTestPasswordFile, boolean distinct) throws IOException {
         this.threadShutdown = new AtomicBoolean();
+        this.validateShare = validateShare;
 
         int count = 4;
         PasswordDictionary passwordDictionary = new PasswordDictionary(count, passwordFile);
@@ -49,7 +49,7 @@ public class CrackPasswordPool implements ThreadFactory, Runnable {
 
         Set<String> passwords;
         if (!passwordFile.exists() || passwordFile.length() == 0) {
-            passwordDictionary.writeToFile();
+            passwordDictionary.writeToFile(distinct);
         }
         passwords = passwordDictionary.readPassword();
         passwordDictionary.dispose();
@@ -66,20 +66,20 @@ public class CrackPasswordPool implements ThreadFactory, Runnable {
         BlockingQueue<Runnable> blockingQueue = new LinkedBlockingQueue<>(Integer.MAX_VALUE / 100);
         ThreadPoolExecutor.CallerRunsPolicy callerRunsPolicy = new ThreadPoolExecutor.CallerRunsPolicy();
 
-        this.threadPool = new ThreadPoolExecutor(CORE_POOL_SIZE, MAX_POOL_SIZE, keepAliveTime, TimeUnit.MINUTES, blockingQueue, this, callerRunsPolicy);
+        this.maxPoolSize = 2 * corePoolSize;
+        this.threadPool = new ThreadPoolExecutor(corePoolSize, maxPoolSize, keepAliveTime, TimeUnit.MINUTES, blockingQueue, new CrackThreadFactory(), callerRunsPolicy);
         this.threadPool.allowCoreThreadTimeOut(true);
-        this.threadPool.purge();
 
         this.truePassword = new AtomicReference<>();
+        PasswordTask.injectCrackPasswordPool(this);
     }
 
-    @Override
-    public Thread newThread(Runnable r) {
-        String threadName = THREAD_POOL_NAME + COUNTER.getAndIncrement();
-        Thread thread = new Thread(r, threadName);
-        thread.setDaemon(true);
-
-        return thread;
+    public void setHttpUtil(HttpUtil httpUtil) {
+        this.httpUtil = httpUtil;
+        if (this.validateShare) {
+            HttpGet panGet = new HttpGet(this.httpUtil.getPanUri());
+            this.panUriValidator = new PanUriValidator(panGet);
+        }
     }
 
     public boolean execute() {
@@ -87,7 +87,12 @@ public class CrackPasswordPool implements ThreadFactory, Runnable {
             return false;
         }
 
-        this.threadPool.execute(this);
+        if (this.validateShare && this.panUriValidator.notFoundOrNoShareCheck()) {
+            this.shutdown(true);
+            return false;
+        }
+
+        this.threadPool.execute(new PasswordTask());
         return this.shouldContinue();
     }
 
@@ -118,44 +123,30 @@ public class CrackPasswordPool implements ThreadFactory, Runnable {
         }
     }
 
-    @Override
-    public void run() {
-        try {
-            String password;
-            synchronized (this.passwords) {
-                Optional<String> any = this.passwords.parallelStream().findAny();
-                if (!any.isPresent()) {
-                    this.shutdown(false);
-                    return;
-                }
-
-                password = any.get();
-                this.passwords.remove(password);
-            }
-
-            this.httpUtil.executeRequest(password);
-        } catch (Exception e) {
-            log.error("发生异常, 停止程序.", e);
-            this.shutdown(true);
-        }
-    }
-
     public void shutdown(boolean force) {
         if (this.threadShutdown.get()) {
             return;
         }
 
         this.threadShutdown.set(true);
-        this.threadPool.shutdownNow();
+        if (force) {
+            this.threadPool.shutdownNow();
+        } else {
+            this.threadPool.shutdown();
+        }
+
         log.info("正在等待线程任务执行结束, 请勿强制停止程序.");
         this.waitForComplete(force);
+        if(this.validateShare){
+            this.panUriValidator.dispose();
+        }
 
         Set<String> passwordsToWrite;
         if (this.httpUtil.getHasDispose().get()) {
             String truePassword = this.truePassword.get();
 
             passwordsToWrite = new HashSet<>();
-            passwordsToWrite.add("https://pan.baidu.com/s/1" + this.httpUtil.getSUrl() + " 的提取码: " + truePassword);
+            passwordsToWrite.add(this.httpUtil.getPanUri() + " 的提取码: " + truePassword);
         } else {
             passwordsToWrite = this.hasTestPasswords;
         }
