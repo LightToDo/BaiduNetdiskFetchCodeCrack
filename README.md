@@ -30,9 +30,9 @@
 	
 4. 破解过程的日志
 
-	验证过的提取码存储路径: /BaiduNetdiskFetchCodeCrack/passwordHasTest.txt, 形如——"提取码错误: YYYY".若删除, 则需要重新生成.
+	验证过的提取码存储路径: /BaiduNetdiskFetchCodeCrack/passwordHasTest.txt, 形如——"提取码错误: YYYY".
 
-	破解成功的结果存储路径: 同上, 形如——"https://pan.baidu.com/s/1XXX 的提取码: YYYY".若删除, 则意味着重新破解.
+	破解成功的结果存储路径: 同上, 形如——"https://pan.baidu.com/s/1XXX 的提取码: YYYY".若不存在, 则意味着重新破解, **对于不同的百度网盘分享链接, 首次运行时必须删除此文件**.
 	
 	本项目的日志存储路径: /BaiduNetdiskFetchCodeCrack/logs, 其中/BaiduNetdiskFetchCodeCrack/logs/appError.log 为程序报错的日志; /BaiduNetdiskFetchCodeCrack/logs/appInfo.log 为程序提取码验证的记录.项目日志可删除, 不影响破解.
 	
