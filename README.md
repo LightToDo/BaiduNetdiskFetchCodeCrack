@@ -30,17 +30,19 @@
 	
 4. 破解过程的日志
 
-	验证过的提取码存储路径: /BaiduNetdiskFetchCodeCrack/passwordHasTest.txt, 形如——"提取码错误: YYYY".
+	验证过的提取码存储路径: /BaiduNetdiskFetchCodeCrack/passwordHasTest.txt, 形如——"提取码错误: YYYY".若删除, 则需要重新生成.
 
-	破解成功的结果存储路径: 同上, 形如——"https://pan.baidu.com/s/1XXX 的提取码: YYYY".
+	破解成功的结果存储路径: 同上, 形如——"https://pan.baidu.com/s/1XXX 的提取码: YYYY".若删除, 则意味着重新破解.
+	
+	本项目的日志存储路径: /BaiduNetdiskFetchCodeCrack/logs, 其中/BaiduNetdiskFetchCodeCrack/logs/appError.log 为程序报错的日志; /BaiduNetdiskFetchCodeCrack/logs/appInfo.log 为程序提取码验证的记录.项目日志可删除, 不影响破解.
 	
 	日志示例: 示例破解的是一份考研-专硕-英语二的课程百度网盘分享链接的提取码, 如下所示
 
-	![破解过程日志](https://user-images.githubusercontent.com/43131785/162653758-2ca668b4-c484-4983-b7ea-6555ee180205.png)
+	![破解过程日志](https://user-images.githubusercontent.com/43131785/162657406-1bb89502-e3f3-4118-b377-7cb3ba4ba1a4.png)
 
 5. 破解耗时
 
-	按照物理双核CPU, 10个线程, 正常网络状态下, 提取码验证可达28个/s, 最长约16个小时破解完成, 通常8个小时, 因为并不需要将整个字典都验证一遍.
+	本项目按照物理双核CPU, 10个线程, 正常网络状态下, 提取码验证可达28个/s, 最长约16个小时破解完成, 通常8个小时, 因为并不需要将整个字典都验证一遍.
 	
 6. 使用简介
 
