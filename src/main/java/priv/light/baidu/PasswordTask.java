@@ -3,6 +3,7 @@ package priv.light.baidu;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.Optional;
+import java.util.concurrent.CancellationException;
 
 /**
  * @author Light
@@ -39,6 +40,7 @@ public class PasswordTask implements Runnable {
             }
 
             crackPasswordPool.getHttpUtil().executeRequest(password);
+        } catch (CancellationException ignored) {
         } catch (Exception e) {
             log.error("发生待处理异常.", e);
         }
